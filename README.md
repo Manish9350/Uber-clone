@@ -221,3 +221,76 @@ Security notes:
 
 - Clearing the cookie on logout prevents the browser from automatically sending the token, but server-side blacklisting ensures tokens can't be reused if stolen.
 - Keep `JWT_SECRET` safe and consider shorter token lifetimes if security requirements demand it.
+
+## Captains - POST /captains/register
+
+Register a new captain (driver). The captains router is mounted at `/captains` in `app.js`, so the full path for registration is `/captains/register`.
+
+### Method & headers
+
+- Method: POST
+- Path: `/captains/register`
+- Content-Type: `application/json`
+
+### Request body (JSON)
+
+```json
+{
+  "fullname": { "firstname": "string", "lastname": "string" },
+  "email": "captain@example.com",
+  "password": "secret123",
+  "vehicle": {
+    "color": "red",
+    "plate": "ABC123",
+    "capacity": 4,
+    "vehicleType": "car" // one of: bike, car, auto
+  }
+}
+```
+
+### Validation rules (from `routes/captain.routes.js`)
+
+- `email` must be a valid email.
+- `fullname.firstname` — min length 3.
+- `fullname.lastname` — min length 3.
+- `password` — min length 6.
+- `vehicle.color` — min length 3.
+- `vehicle.plate` — min length 3.
+- `vehicle.capacity` — numeric.
+- `vehicle.vehicleType` — must be one of `bike`, `car`, or `auto`.
+
+If validation fails, the controller returns HTTP 400 and `{ errors: [...] }`.
+
+### Model-level notes (`models/captain.model.js`)
+
+- The captain schema requires `fullname`, `email`, `password`, and `vehicle` (with `color`, `plate`, `capacity`, `vehicleType`).
+- `email` and `vehicle.plate` are unique.
+- Passwords are hashed by the controller/service using `captainModel.hashPassword` (bcrypt with salt rounds 10).
+- `generateAuthToken()` creates a JWT signed with `process.env.JWT_SECRET_KEY` and expires in 1 day.
+
+Important: unlike the `User` model, the `Captain` schema does not set `password.select = false` — that means responses may include the hashed password unless the controller or response explicitly omits it. It's recommended to remove the password from responses before sending (e.g., use a transform, projection, or delete `captain.password` in the controller response).
+
+### Example curl
+
+```bash
+curl -X POST http://localhost:3000/captains/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullname": { "firstname": "Ravi", "lastname": "Kumar" },
+    "email": "ravi@example.com",
+    "password": "driverpass",
+    "vehicle": { "color": "blue", "plate": "DLX-1234", "capacity": 4, "vehicleType": "car" }
+  }'
+```
+
+### Possible responses
+
+- 201 Created — `{ captain, token }` on success (the current controller returns the full `captain` document and a JWT token).
+- 400 Bad Request — validation errors or email already in use.
+- 500 Internal Server Error — unexpected errors.
+
+### Security & recommendations
+
+- Do not return the password field in API responses. Add `select: false` to the password field in the schema or remove the field in the controller before sending the response.
+- Ensure `process.env.JWT_SECRET_KEY` is set and secure.
+- Consider rate-limiting the registration endpoint and validating `vehicle.plate` format if local regulations apply.

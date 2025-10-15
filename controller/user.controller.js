@@ -10,6 +10,10 @@ const registerUser = async (req, res, next) => {
   }
 
   const { fullname, email, password } = req.body;
+  const existingUser = await userModel.findOne({ email });
+  if (existingUser) {
+    return res.status(400).json({ message: "Email already in use" });
+  }
   const hashedPassword = await userModel.hashPassword(password);
 
   const user = await userService.createUser({
@@ -39,7 +43,7 @@ const loginUser = async (req, res, next) => {
   }
   const token = user.generateAuthToken();
 
-res.cookie("token", token, { httpOnly: true });
+  res.cookie("token", token, { httpOnly: true });
 
   res.status(200).json({ token, user });
 };
@@ -57,11 +61,11 @@ const logoutUser = async (req, res, next) => {
   res.clearCookie("token");
   await blacklistTokenModel.create({ token });
   res.status(200).json({ message: "Logged out successfully" });
-}
+};
 
 module.exports = {
   registerUser,
   loginUser,
   getUserProfile,
-  logoutUser
+  logoutUser,
 };
