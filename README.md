@@ -222,6 +222,91 @@ Security notes:
 - Clearing the cookie on logout prevents the browser from automatically sending the token, but server-side blacklisting ensures tokens can't be reused if stolen.
 - Keep `JWT_SECRET` safe and consider shorter token lifetimes if security requirements demand it.
 
+## Captains - Auth endpoints
+
+The Captains router exposes login, profile and logout endpoints under the `/captains` mount point. The controller and routes follow the same patterns as user authentication but use the captain model and a separate JWT secret key (`JWT_SECRET_KEY`) when creating tokens.
+
+### POST /captains/login
+
+Authenticate a captain and receive a JWT. Validation is defined in `routes/captain.routes.js` (email & password checks).
+
+Request body:
+
+```json
+{
+  "email": "captain@example.com",
+  "password": "secret123"
+}
+```
+
+Behavior:
+
+- The controller fetches the captain with `.select('+password')` and compares the provided password using `captain.comparePassword`.
+- On success, the controller generates a JWT via `captain.generateAuthToken()` (signed with `JWT_SECRET_KEY`) and sets an httpOnly cookie named `token`.
+- Response contains `{ captain, token }` (note: current controllers return the full captain document — consider removing the password field before responding).
+
+Example curl:
+
+```bash
+curl -X POST http://localhost:3000/captains/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ravi@example.com","password":"driverpass"}'
+```
+
+Responses:
+
+- 200 OK — login successful (cookie set, body `{ captain, token }`).
+- 400 Bad Request — validation errors or invalid credentials.
+- 500 Internal Server Error — unexpected errors.
+
+### GET /captains/profile
+
+Protected endpoint that returns the authenticated captain's profile. The route uses an `authCaptain` middleware that:
+
+- reads the token from the `token` cookie or the `Authorization` header (`Bearer <token>`),
+- checks the token against the `BlacklistToken` collection, and
+- verifies the token and loads the captain document into `req.captain`.
+
+Example request (cookie):
+
+```bash
+curl -X GET http://localhost:3000/captains/profile \
+  -H "Cookie: token=<your-token-here>"
+```
+
+Responses:
+
+- 200 OK — `{ captain }` (captain object without the password if the controller removes it).
+- 401 Unauthorized — missing/invalid/blacklisted token.
+- 404 Not Found — captain referenced by token not found.
+
+### GET /captains/logout
+
+Logs the captain out by blacklisting the token and clearing the cookie.
+
+Behavior:
+
+- The controller reads the token from the cookie or `Authorization` header and stores it in the `BlacklistToken` collection (so it cannot be used again).
+- The cookie `token` is cleared with `res.clearCookie('token')`.
+
+Example request (cookie):
+
+```bash
+curl -X GET http://localhost:3000/captains/logout \
+  -H "Cookie: token=<your-token-here>"
+```
+
+Responses:
+
+- 200 OK — `{ message: "Logged out successfully" }`.
+- 401 Unauthorized — missing or invalid token.
+- 500 Internal Server Error — if blacklisting fails or other server errors occur.
+
+Security notes:
+
+- Ensure `process.env.JWT_SECRET_KEY` is set and kept secret for captain tokens.
+- Keep the same recommendations as users: avoid returning password fields in API responses and consider rate-limiting authentication endpoints.
+
 ## Captains - POST /captains/register
 
 Register a new captain (driver). The captains router is mounted at `/captains` in `app.js`, so the full path for registration is `/captains/register`.
