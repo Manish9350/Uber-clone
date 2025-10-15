@@ -164,3 +164,60 @@ curl -X POST http://localhost:3000/login \
 - Ensure `process.env.JWT_SECRET` is set and kept secret.
 - Avoid returning the hashed password in responses. Use Mongoose projections or `toJSON` transforms to remove sensitive fields.
 - Consider rate-limiting login attempts and adding account lockout or captcha for too many failed logins.
+
+## GET /users/profile
+
+Protected endpoint that returns the authenticated user's profile. The route is defined in `routes/user.routes.js` and uses the `authUser` middleware.
+
+Behavior:
+
+- The `authUser` middleware reads the token from the `token` cookie (`req.cookies.token`) or the `Authorization` header (`Bearer <token>`).
+- It checks whether the token is blacklisted (see `models/blacklistToken.model.js`) and verifies the token using `JWT_SECRET`.
+- If the token is valid and the user exists, the middleware attaches the user document to `req.user` and the controller returns the user profile.
+
+Example request (cookie):
+
+```bash
+curl -X GET http://localhost:3000/users/profile \
+  -H "Cookie: token=<your-token-here>"
+```
+
+Example request (bearer token):
+
+```bash
+curl -X GET http://localhost:3000/users/profile \
+  -H "Authorization: Bearer <your-token-here>"
+```
+
+Responses:
+
+- 200 OK — `{ user }` (user object without password).
+- 401 Unauthorized — missing, invalid, or blacklisted token.
+- 404 Not Found — user referenced by token not found in DB.
+
+## GET /users/logout
+
+Logs the user out by clearing the auth cookie and blacklisting the token on the server.
+
+Behavior:
+
+- The route expects the user to be authenticated (uses `authUser`). The controller reads the token from the cookie or `Authorization` header.
+- It clears the `token` cookie with `res.clearCookie('token')` and records the token in the `BlacklistToken` collection so it cannot be used again. Blacklisted tokens are set to expire automatically after 1 day (see schema `expires: "1d"`).
+
+Example request (cookie):
+
+```bash
+curl -X GET http://localhost:3000/users/logout \
+  -H "Cookie: token=<your-token-here>"
+```
+
+Responses:
+
+- 200 OK — `{ message: "Logged out successfully" }` on successful logout.
+- 401 Unauthorized — missing or invalid token.
+- 500 Internal Server Error — if blacklisting fails or other server errors occur.
+
+Security notes:
+
+- Clearing the cookie on logout prevents the browser from automatically sending the token, but server-side blacklisting ensures tokens can't be reused if stolen.
+- Keep `JWT_SECRET` safe and consider shorter token lifetimes if security requirements demand it.
